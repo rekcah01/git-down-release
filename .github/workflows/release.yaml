@@ -94,12 +94,12 @@ jobs:
           FILEPATH="${{ steps.download.outputs.filepath }}"
           FILENAME="${{ steps.download.outputs.filename }}"
           SIZE="${{ steps.download.outputs.size }}"
-          LIMIT=$((1900 * 1024 * 1024))
+          LIMIT=$((2000 * 1024 * 1024))
 
           mkdir -p tmp_splits release_files
 
           if [ "$SIZE" -gt "$LIMIT" ]; then
-            echo "✂️ File is $(( SIZE / 1024 / 1024 ))MB — splitting into 1.9GB zip parts..."
+            echo "✂️ File is $(( SIZE / 1024 / 1024 ))MB — splitting into 2GB zip parts..."
 
             SPLIT_SOURCE="$FILEPATH"
             SPLIT_BASENAME="$FILENAME"
@@ -110,7 +110,7 @@ jobs:
               SPLIT_BASENAME="${FILENAME%.zip}.bin"
             fi
 
-            zip -s 1900m "tmp_splits/${SPLIT_BASENAME}.zip" -j "$SPLIT_SOURCE"
+            zip -s 2000m "tmp_splits/${SPLIT_BASENAME}.zip" -j "$SPLIT_SOURCE"
 
             PART_COUNT=$(ls tmp_splits/ | wc -l)
             echo "✅ Split into $PART_COUNT parts"
@@ -118,7 +118,7 @@ jobs:
 
             mv tmp_splits/* release_files/
           else
-            echo "✅ File is under 1.9GB — no splitting needed"
+            echo "✅ File is under 2GB — no splitting needed"
             cp "$FILEPATH" "release_files/$FILENAME"
           fi
 
@@ -142,7 +142,7 @@ jobs:
             cat > release_notes.md << EOF_NOTES
           Downloaded from: ${DOWNLOAD_URL}
 
-          Split into ${PART_COUNT} parts of 1.9GB each.
+          Split into ${PART_COUNT} parts of 2GB each.
 
           To reassemble on Windows:
           1. Download all parts (.zip + .z01 .z02 ...)

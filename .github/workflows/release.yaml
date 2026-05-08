@@ -96,29 +96,36 @@ jobs:
           SIZE="${{ steps.download.outputs.size }}"
           LIMIT=$((1900 * 1024 * 1024))
 
-          mkdir -p release_files
+          mkdir -p tmp_splits release_files
 
           if [ "$SIZE" -gt "$LIMIT" ]; then
-            echo "✂️ File is $(( SIZE / 1024 / 1024 ))MB — splitting into 1.9GB parts..."
+            echo "✂️ File is $(( SIZE / 1024 / 1024 ))MB — splitting into 1.9GB zip parts..."
 
-            # use split command — cleaner than zip for large raw files
-            # produces: filename.part.aa, filename.part.ab, filename.part.ac ...
-            split \
-              --bytes=1900m \
-              --suffix-length=3 \
-              --numeric-suffixes=1 \
-              "$FILEPATH" \
-              "release_files/${FILENAME}.part."
+            # rename .zip to .bin to avoid "cannot update split archive" error
+            SPLIT_SOURCE="$FILEPATH"
+            SPLIT_BASENAME="$FILENAME"
+            if [[ "$FILENAME" =~ \.zip$ ]]; then
+              RENAMED="tmp_downloads/${FILENAME%.zip}.bin"
+              mv "$FILEPATH" "$RENAMED"
+              SPLIT_SOURCE="$RENAMED"
+              SPLIT_BASENAME="${FILENAME%.zip}.bin"
+            fi
 
-            PART_COUNT=$(ls release_files/ | wc -l)
+            # split into tmp_splits/ to avoid collision with any existing files
+            zip -s 1900m "tmp_splits/${SPLIT_BASENAME}.zip" -j "$SPLIT_SOURCE"
+
+            PART_COUNT=$(ls tmp_splits/ | wc -l)
             echo "✅ Split into $PART_COUNT parts"
-            ls -lh release_files/
+            ls -lh tmp_splits/
+
+            # move all parts to release_files/
+            mv tmp_splits/* release_files/
           else
             echo "✅ File is under 1.9GB — no splitting needed"
             cp "$FILEPATH" "release_files/$FILENAME"
           fi
 
-          rm -rf tmp_downloads
+          rm -rf tmp_downloads tmp_splits
 
       - name: Create GitHub Release and upload files
         if: steps.parse.outputs.skip == 'false'
@@ -130,18 +137,28 @@ jobs:
           FILENAME="${{ steps.download.outputs.filename }}"
           TAG="release-$(date +%Y%m%d-%H%M%S)"
           TITLE="Download: $FILENAME"
-          NOTES="Downloaded from: ${{ steps.parse.outputs.url }}"
 
           PART_COUNT=$(ls release_files/ | wc -l)
-          if [ "$PART_COUNT" -gt 1 ]; then
-            NOTES="$NOTES
-            
-📦 Split into $PART_COUNT parts of 1.9GB each.
 
-**To reassemble:**
+          if [ "$PART_COUNT" -gt 1 ]; then
+            # get the base name used for split parts
+            SPLIT_BASENAME="${FILENAME%.zip}.bin"
+            NOTES="Downloaded from: ${{ steps.parse.outputs.url }}
+
+📦 Split into $PART_COUNT parts (1.9GB each).
+
+**To reassemble on Windows:**
+1. Download all parts (.zip + .z01 .z02 ...)
+2. Right-click the .zip part → Extract with 7-Zip or WinRAR
+3. It will automatically use the .z01 .z02 parts and reassemble
+
+**To reassemble on Linux/Mac:**
 \`\`\`bash
-cat ${FILENAME}.part.* > ${FILENAME}
+zip -F ${SPLIT_BASENAME}.zip --fix --out full.zip
+unzip full.zip
 \`\`\`"
+          else
+            NOTES="Downloaded from: ${{ steps.parse.outputs.url }}"
           fi
 
           echo "🏷️ Creating release: $TAG"

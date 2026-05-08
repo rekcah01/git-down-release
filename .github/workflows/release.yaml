@@ -1,3 +1,4 @@
+```yaml
 name: Download and Release
 
 on:
@@ -101,7 +102,6 @@ jobs:
           if [ "$SIZE" -gt "$LIMIT" ]; then
             echo "✂️ File is $(( SIZE / 1024 / 1024 ))MB — splitting into 1.9GB zip parts..."
 
-            # rename .zip to .bin to avoid "cannot update split archive" error
             SPLIT_SOURCE="$FILEPATH"
             SPLIT_BASENAME="$FILENAME"
             if [[ "$FILENAME" =~ \.zip$ ]]; then
@@ -111,14 +111,12 @@ jobs:
               SPLIT_BASENAME="${FILENAME%.zip}.bin"
             fi
 
-            # split into tmp_splits/ to avoid collision with any existing files
             zip -s 1900m "tmp_splits/${SPLIT_BASENAME}.zip" -j "$SPLIT_SOURCE"
 
             PART_COUNT=$(ls tmp_splits/ | wc -l)
             echo "✅ Split into $PART_COUNT parts"
             ls -lh tmp_splits/
 
-            # move all parts to release_files/
             mv tmp_splits/* release_files/
           else
             echo "✅ File is under 1.9GB — no splitting needed"
@@ -137,36 +135,38 @@ jobs:
           FILENAME="${{ steps.download.outputs.filename }}"
           TAG="release-$(date +%Y%m%d-%H%M%S)"
           TITLE="Download: $FILENAME"
-
           PART_COUNT=$(ls release_files/ | wc -l)
+          SPLIT_BASENAME="${FILENAME%.zip}.bin"
+          DOWNLOAD_URL="${{ steps.parse.outputs.url }}"
 
           if [ "$PART_COUNT" -gt 1 ]; then
-            # get the base name used for split parts
-            SPLIT_BASENAME="${FILENAME%.zip}.bin"
-            NOTES="Downloaded from: ${{ steps.parse.outputs.url }}
+            cat > release_notes.md << EOF_NOTES
+          Downloaded from: ${DOWNLOAD_URL}
 
-📦 Split into $PART_COUNT parts (1.9GB each).
+          Split into ${PART_COUNT} parts of 1.9GB each.
 
-**To reassemble on Windows:**
-1. Download all parts (.zip + .z01 .z02 ...)
-2. Right-click the .zip part → Extract with 7-Zip or WinRAR
-3. It will automatically use the .z01 .z02 parts and reassemble
+          To reassemble on Windows:
+          1. Download all parts (.zip + .z01 .z02 ...)
+          2. Right-click the .zip part and extract with 7-Zip or WinRAR
+          3. It will automatically reassemble all parts
 
-**To reassemble on Linux/Mac:**
-\`\`\`bash
-zip -F ${SPLIT_BASENAME}.zip --fix --out full.zip
-unzip full.zip
-\`\`\`"
+          To reassemble on Linux/Mac:
+          zip -F ${SPLIT_BASENAME}.zip --fix --out full.zip
+          unzip full.zip
+          EOF_NOTES
           else
-            NOTES="Downloaded from: ${{ steps.parse.outputs.url }}"
+            cat > release_notes.md << EOF_NOTES
+          Downloaded from: ${DOWNLOAD_URL}
+          EOF_NOTES
           fi
 
           echo "🏷️ Creating release: $TAG"
           gh release create "$TAG" \
             --title "$TITLE" \
-            --notes "$NOTES" \
+            --notes-file release_notes.md \
             release_files/*
 
           echo "✅ Release created: $TAG"
           echo "📎 Uploaded $PART_COUNT file(s)"
-          rm -rf release_files
+          rm -rf release_files release_notes.md
+```
